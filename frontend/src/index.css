@@ -1,0 +1,33 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+@config "../tailwind.config.js";
+
+@layer base {
+  body {
+    @apply bg-background text-on-background font-manrope;
+    min-height: 100dvh;
+  }
+
+  .prose h1 { @apply text-2xl font-black mb-4 mt-6; }
+  .prose h2 { @apply text-xl font-bold mb-3 mt-5; }
+  .prose h3 { @apply text-lg font-bold mb-2 mt-4; }
+  .prose p { @apply mb-4 leading-relaxed; }
+  .prose ul { @apply list-disc list-inside mb-4 space-y-2; }
+  .prose ol { @apply list-decimal list-inside mb-4 space-y-2; }
+  .prose li { @apply ml-4; }
+  .prose strong { @apply font-black text-primary; }
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.material-symbols-outlined.fill {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.ambient-shadow {
+  @apply shadow-premium;
+}
