@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Flame, Moon, Droplets } from 'lucide-react';
+
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 

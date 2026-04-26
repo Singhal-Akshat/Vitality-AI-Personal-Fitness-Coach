@@ -4,8 +4,8 @@ import api from '../utils/api';
 const Trends: React.FC = () => {
   const [activities, setActivities] = useState<any[]>([]);
   const [milestone, setMilestone] = useState<string>("Set your Gemini API key in settings to see personalized milestones!");
-  const [loadingMilestone, setLoadingMilestone] = useState(false);
-  const [glasses, setGlasses] = useState(0);
+  const [, setLoadingMilestone] = useState(false);
+  const [, setGlasses] = useState(0);
 
   useEffect(() => {
     fetchActivities();
@@ -95,7 +95,7 @@ const Trends: React.FC = () => {
   };
 
   const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  const fullDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
 
   return (
     <div className="space-y-10 animate-in fade-in duration-700 pb-20">

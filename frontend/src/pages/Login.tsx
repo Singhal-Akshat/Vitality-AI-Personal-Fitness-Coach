@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
-import Onboarding from '../components/Onboarding';
+
 
 const Login: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
   const [isSignup, setIsSignup] = useState(false);
