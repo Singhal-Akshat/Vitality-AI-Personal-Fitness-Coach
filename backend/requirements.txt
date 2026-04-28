@@ -1,5 +1,7 @@
 flask
 flask-cors
 google-generativeai
+pymongo[srv]
+python-dotenv
 gunicorn
 python-dotenv

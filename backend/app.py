@@ -1,66 +1,57 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import json
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
+from pymongo import MongoClient
+from dotenv import load_dotenv
 from ai_service import get_fitness_recommendation
 from guardrails import check_fitness_goal, check_activity_spike, check_overtraining
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-DATA_FILE = 'data.json'
-
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, 'r') as f:
-                content = json.load(f)
-                # If it's the old single-user format, migrate it
-                if "users" not in content:
-                    return {"users": {}}
-                return content
-        except:
-            return {"users": {}}
-    return {"users": {}}
-
-def save_data(data):
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+# MongoDB Setup
+MONGO_URI = os.getenv('MONGO_URI')
+client = MongoClient(MONGO_URI)
+db = client['vitality_ai']
+users_collection = db['users']
 
 @app.route('/register', methods=['POST'])
 def register():
-    data = load_data()
     user_info = request.json
     email = user_info.get('email')
     
     if not email:
         return jsonify({"error": "Email is required"}), 400
     
-    if email in data['users']:
+    if users_collection.find_one({"email": email}):
         return jsonify({"error": "User already exists"}), 400
     
-    # Store user with password and initial empty profile/activities/water
-    data['users'][email] = {
-        "password": user_info.get('password'),
+    # Store user with hashed password
+    new_user = {
+        "email": email,
+        "password": generate_password_hash(user_info.get('password')),
         "profile": user_info.get('profile', {}),
         "activities": [],
         "water": 0
     }
-    save_data(data)
+    users_collection.insert_one(new_user)
     return jsonify({"status": "success", "message": "User registered successfully"})
 
 @app.route('/login', methods=['POST'])
 def login():
-    data = load_data()
     creds = request.json
     email = creds.get('email')
     password = creds.get('password')
     
-    if email in data['users'] and data['users'][email]['password'] == password:
-        user_data = data['users'][email]
+    user = users_collection.find_one({"email": email})
+    if user and check_password_hash(user['password'], password):
         return jsonify({
             "status": "success", 
-            "profile": user_data['profile'],
+            "profile": user.get('profile', {}),
             "email": email
         })
     
@@ -71,12 +62,12 @@ def update_profile():
     email = request.headers.get('x-user-email')
     if not email: return jsonify({"error": "Unauthorized"}), 401
     
-    data = load_data()
-    if email not in data['users']: return jsonify({"error": "User not found"}), 404
+    user = users_collection.find_one({"email": email})
+    if not user: return jsonify({"error": "User not found"}), 404
     
     new_profile = request.json
     
-    # Run guardrails on goal if applicable (only if all fields are present)
+    # Run guardrails on goal if applicable
     warning = None
     try:
         if all(k in new_profile for k in ['current_weight', 'target_weight', 'weeks']):
@@ -88,12 +79,11 @@ def update_profile():
     except (ValueError, TypeError):
         pass
     
-    data['users'][email]['profile'] = new_profile
-    save_data(data)
+    users_collection.update_one({"email": email}, {"$set": {"profile": new_profile}})
     
     return jsonify({
         "status": "success", 
-        "profile": data['users'][email]['profile'],
+        "profile": new_profile,
         "warning": warning
     })
 
@@ -102,21 +92,21 @@ def get_activities():
     email = request.headers.get('x-user-email')
     if not email: return jsonify([])
     
-    data = load_data()
-    if email not in data['users']: return jsonify([])
+    user = users_collection.find_one({"email": email})
+    if not user: return jsonify([])
     
-    return jsonify(data['users'][email]['activities'])
+    return jsonify(user.get('activities', []))
 
 @app.route('/log-activity', methods=['POST'])
 def log_activity():
     email = request.headers.get('x-user-email')
     if not email: return jsonify({"error": "Unauthorized"}), 401
     
-    data = load_data()
-    if email not in data['users']: return jsonify({"error": "User not found"}), 404
+    user = users_collection.find_one({"email": email})
+    if not user: return jsonify({"error": "User not found"}), 404
     
     activity = request.json
-    user_activities = data['users'][email]['activities']
+    user_activities = user.get('activities', [])
     
     # Calculate recent average for spike detection
     recent_durations = [a['duration'] for a in user_activities[-5:]]
@@ -124,12 +114,14 @@ def log_activity():
     
     warning = check_activity_spike(avg_duration, activity['duration'])
     
-    user_activities.append(activity)
-    save_data(data)
+    # Push activity to the array in MongoDB
+    users_collection.update_one({"email": email}, {"$push": {"activities": activity}})
     
     # Check for overtraining after logging
-    weekly_sessions = len(user_activities) 
-    total_duration = sum(a['duration'] for a in user_activities)
+    # Note: Using the updated list for check
+    updated_activities = user_activities + [activity]
+    weekly_sessions = len(updated_activities) 
+    total_duration = sum(a['duration'] for a in updated_activities)
     overtraining_caution = check_overtraining(weekly_sessions, total_duration)
     
     return jsonify({
@@ -145,16 +137,15 @@ def get_milestone():
     if not api_key or not email:
         return jsonify({"error": "Missing credentials"}), 401
     
-    data = load_data()
-    if email not in data['users']: return jsonify({"error": "User not found"}), 404
+    user = users_collection.find_one({"email": email})
+    if not user: return jsonify({"error": "User not found"}), 404
     
-    user_data = data['users'][email]
     user_query = "Based on my logs and profile, give me a single, highly personalized fitness milestone or achievement insight in 2 sentences. Focus on my progress or upcoming goals. Mention specific numbers from my logs if possible."
     
     recommendation = get_fitness_recommendation(
         api_key, 
-        user_data['profile'], 
-        user_data['activities'],
+        user.get('profile', {}), 
+        user.get('activities', []),
         user_query
     )
     
@@ -167,16 +158,15 @@ def get_recommendation():
     if not api_key or not email:
         return jsonify({"error": "Missing credentials"}), 401
     
-    data = load_data()
-    if email not in data['users']: return jsonify({"error": "User not found"}), 404
+    user = users_collection.find_one({"email": email})
+    if not user: return jsonify({"error": "User not found"}), 404
     
-    user_data = data['users'][email]
     user_query = request.json.get('query')
     
     recommendation = get_fitness_recommendation(
         api_key, 
-        user_data['profile'], 
-        user_data['activities'],
+        user.get('profile', {}), 
+        user.get('activities', []),
         user_query
     )
     
@@ -187,24 +177,23 @@ def get_water():
     email = request.headers.get('x-user-email')
     if not email: return jsonify({"glasses": 0})
     
-    data = load_data()
-    if email not in data['users']: return jsonify({"glasses": 0})
+    user = users_collection.find_one({"email": email})
+    if not user: return jsonify({"glasses": 0})
     
-    return jsonify({"glasses": data['users'][email].get('water', 0)})
+    return jsonify({"glasses": user.get('water', 0)})
 
 @app.route('/log-water', methods=['POST'])
 def log_water():
     email = request.headers.get('x-user-email')
     if not email: return jsonify({"error": "Unauthorized"}), 401
     
-    data = load_data()
-    if email not in data['users']: return jsonify({"error": "User not found"}), 404
+    user = users_collection.find_one({"email": email})
+    if not user: return jsonify({"error": "User not found"}), 404
     
     glasses = request.json.get('glasses', 0)
-    data['users'][email]['water'] = glasses
-    save_data(data)
+    users_collection.update_one({"email": email}, {"$set": {"water": glasses}})
     
-    return jsonify({"status": "success", "glasses": data['users'][email]['water']})
+    return jsonify({"status": "success", "glasses": glasses})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
