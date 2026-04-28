@@ -12,12 +12,6 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Scrub the demo key if it matches exactly
-    const currentKey = localStorage.getItem('ai_api_key');
-    if (currentKey === 'AQ.Ab8RN6IfJLdGC57lcuJMxmMuN7Fbx7YCyCkbYhchYnBB-jftxA') {
-      localStorage.removeItem('ai_api_key');
-    }
-
     const auth = localStorage.getItem('isAuthenticated') === 'true';
     if (auth) {
       setIsAuthenticated(true);
